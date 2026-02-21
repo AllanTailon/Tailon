@@ -1,0 +1,22 @@
+# Frontend Dockerfile para Desenvolvimento
+# Hot reload habilitado
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Instala dependências
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Copia código fonte
+COPY . .
+
+# Desabilita telemetria
+ENV NEXT_TELEMETRY_DISABLED=1
+
+EXPOSE 3000
+
+# Roda em modo desenvolvimento com hot reload
+CMD ["npm", "run", "dev"]
+
