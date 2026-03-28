@@ -4,6 +4,7 @@ Inclui validação, rate limiting e logging seguro.
 """
 
 import logging
+import time
 from datetime import datetime
 from typing import Dict, List
 from uuid import uuid4
@@ -13,12 +14,19 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from ..config import get_settings, Settings
+from ..engine.executor import (
+    WorkflowExecutor,
+    ExecutionStatus,
+    serialize_execution_context_for_response,
+)
 from ..models import (
     WorkflowCreate,
     WorkflowResponse,
     WorkflowExecuteRequest,
     WorkflowExecuteResponse,
+    ExecutionResult,
 )
+from ..services.excel_service import data_store
 
 # Logger configurado para não vazar dados sensíveis
 logger = logging.getLogger(__name__)
@@ -144,10 +152,10 @@ async def execute_workflow(
     execute_request: WorkflowExecuteRequest,
 ) -> WorkflowExecuteResponse:
     """
-    Executa um workflow.
-    
-    Por enquanto, apenas valida o workflow.
-    A execução real será implementada na próxima fase.
+    Executa um workflow (pandas + data_store + OR-Tools no bloco Alocar).
+
+    Com `dry_run: true`, apenas valida. Com `dry_run: false`, executa nodes na
+    ordem topológica e pode retornar Excel em base64 (`output_file_base64`).
     """
     workflow = execute_request.workflow
     errors: List[str] = []
@@ -192,12 +200,67 @@ async def execute_workflow(
             message="Validação concluída com sucesso (dry run)",
             warnings=warnings,
         )
-    
-    # Execução real será implementada na próxima fase
+
+    t0 = time.perf_counter()
+    executor = WorkflowExecutor(workflow, data_store=data_store)
+    context = executor.execute(dry_run=False)
+    total_ms = (time.perf_counter() - t0) * 1000
+
+    if context.errors:
+        node_results_raw, summary, b64, fname = serialize_execution_context_for_response(context)
+        exec_results = [
+            ExecutionResult(
+                node_id=r["node_id"],
+                status=r["status"],
+                data=r.get("data"),
+                error=r.get("error"),
+                warnings=r.get("warnings") or [],
+                execution_time_ms=r.get("execution_time_ms"),
+            )
+            for r in node_results_raw
+        ]
+        return WorkflowExecuteResponse(
+            success=False,
+            message="Falha na execução do workflow",
+            errors=context.errors,
+            warnings=context.warnings + warnings,
+            node_results=exec_results,
+            result=summary,
+            total_execution_time_ms=total_ms,
+            output_file_base64=b64,
+            output_filename=fname,
+        )
+
+    node_results_raw, summary, b64, fname = serialize_execution_context_for_response(context)
+    exec_results = [
+        ExecutionResult(
+            node_id=r["node_id"],
+            status=r["status"],
+            data=r.get("data"),
+            error=r.get("error"),
+            warnings=r.get("warnings") or [],
+            execution_time_ms=r.get("execution_time_ms"),
+        )
+        for r in node_results_raw
+    ]
+
+    result_payload: Dict = {
+        "workflow_name": workflow.name,
+        "nodes_completed": sum(
+            1 for nr in context.node_results.values() if nr.status == ExecutionStatus.COMPLETED
+        ),
+    }
+    if summary:
+        result_payload.update(summary)
+
     return WorkflowExecuteResponse(
         success=True,
-        message="Execução simulada com sucesso. Engine completa em desenvolvimento.",
-        result={"nodes_processed": len(workflow.nodes)},
-        warnings=warnings,
+        message="Workflow executado com sucesso",
+        result=result_payload,
+        node_results=exec_results,
+        warnings=context.warnings + warnings,
+        total_execution_time_ms=total_ms,
+        output_file_base64=b64,
+        output_filename=fname,
     )
 

@@ -46,6 +46,20 @@ interface WorkflowState {
   setWorkflowName: (name: string) => void;
   clearWorkflow: () => void;
   exportWorkflow: () => object;
+  /** Payload compatível com POST /api/v1/workflows/execute (WorkflowCreate) */
+  getWorkflowPayloadForApi: () => {
+    name: string;
+    description?: string;
+    nodes: Array<{
+      id: string;
+      type: string;
+      category: string;
+      label: string;
+      position: { x: number; y: number };
+      config: NodeConfig;
+    }>;
+    edges: Array<{ id: string; source: string; target: string }>;
+  };
   importWorkflow: (data: object) => void;
 }
 
@@ -200,6 +214,26 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         label: n.data.label,
         position: n.position,
         config: n.data.config,
+      })),
+      edges: edges.map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+      })),
+    };
+  },
+
+  getWorkflowPayloadForApi: () => {
+    const { nodes, edges, workflowName } = get();
+    return {
+      name: workflowName,
+      nodes: nodes.map((n) => ({
+        id: n.id,
+        type: n.data.blockType,
+        category: n.data.category,
+        label: n.data.label,
+        position: { x: n.position.x, y: n.position.y },
+        config: n.data.config ?? {},
       })),
       edges: edges.map((e) => ({
         id: e.id,

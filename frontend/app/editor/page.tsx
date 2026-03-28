@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useWorkflowStore } from '@/lib/workflow/store';
 import { useDataStore } from '@/lib/workflow/data-store';
+import { executeWorkflow, downloadBase64File } from '@/lib/api';
 import Canvas from '@/components/flow/Canvas';
 import DataPanel from '@/components/flow/DataPanel';
 import { 
@@ -16,17 +17,20 @@ import {
   Play, 
   Trash2,
   Database,
+  Loader2,
 } from 'lucide-react';
 
 export default function EditorPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dataPanelOpen, setDataPanelOpen] = useState(false);
+  const [executing, setExecuting] = useState(false);
   
   const workflowName = useWorkflowStore((state) => state.workflowName);
   const setWorkflowName = useWorkflowStore((state) => state.setWorkflowName);
   const exportWorkflow = useWorkflowStore((state) => state.exportWorkflow);
   const importWorkflow = useWorkflowStore((state) => state.importWorkflow);
   const clearWorkflow = useWorkflowStore((state) => state.clearWorkflow);
+  const getWorkflowPayloadForApi = useWorkflowStore((state) => state.getWorkflowPayloadForApi);
   const nodes = useWorkflowStore((state) => state.nodes);
   
   const datasets = useDataStore((state) => state.datasets);
@@ -99,14 +103,42 @@ export default function EditorPage() {
     }
   }, [clearWorkflow, nodes.length]);
   
-  // Executar workflow (placeholder)
-  const handleRun = useCallback(() => {
+  const handleRun = useCallback(async () => {
     if (nodes.length === 0) {
       alert('Adicione blocos ao workflow antes de executar.');
       return;
     }
-    alert('Funcionalidade de execução será implementada na próxima fase.');
-  }, [nodes.length]);
+    const missingDataset = nodes.filter(
+      (n) =>
+        n.data.blockType === 'excel-input' &&
+        !(n.data.config?.datasetId && String(n.data.config.datasetId).length > 0)
+    );
+    if (missingDataset.length > 0) {
+      alert(
+        'Configure um arquivo em todos os blocos "Importar Excel" (clique no bloco e faça upload ou escolha um dataset).'
+      );
+      return;
+    }
+    setExecuting(true);
+    try {
+      const workflow = getWorkflowPayloadForApi();
+      const res = await executeWorkflow(workflow, { dryRun: false });
+      if (!res.success) {
+        const msg = [res.message, ...(res.errors || [])].filter(Boolean).join('\n');
+        alert(msg || 'Falha na execução.');
+        return;
+      }
+      if (res.output_file_base64 && res.output_filename) {
+        downloadBase64File(res.output_file_base64, res.output_filename);
+      }
+      const extra = res.warnings?.length ? `\n\nAvisos:\n${res.warnings.join('\n')}` : '';
+      alert(`Execução concluída.${res.output_file_base64 ? '\nO arquivo Excel foi baixado.' : ''}${extra}`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Erro ao executar workflow.');
+    } finally {
+      setExecuting(false);
+    }
+  }, [nodes, getWorkflowPayloadForApi]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -184,9 +216,17 @@ export default function EditorPage() {
           </Button>
           
           {/* Executar */}
-          <Button size="sm" onClick={handleRun} disabled={nodes.length === 0}>
-            <Play className="w-4 h-4 mr-2" />
-            Executar
+          <Button
+            size="sm"
+            onClick={handleRun}
+            disabled={nodes.length === 0 || executing}
+          >
+            {executing ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Play className="w-4 h-4 mr-2" />
+            )}
+            {executing ? 'Executando…' : 'Executar'}
           </Button>
         </div>
       </header>

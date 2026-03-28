@@ -230,3 +230,6 @@ class WorkflowExecuteResponse(BaseModel):
     errors: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
     total_execution_time_ms: Optional[float] = None
+    # Saída Excel (quando houver bloco excel-output)
+    output_file_base64: Optional[str] = None
+    output_filename: Optional[str] = None

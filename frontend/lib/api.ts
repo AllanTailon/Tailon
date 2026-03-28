@@ -60,6 +60,42 @@ export interface DatasetListResponse {
   total: number;
 }
 
+/** Corpo enviado para execução (WorkflowCreate) */
+export interface WorkflowExecuteBody {
+  name: string;
+  description?: string;
+  nodes: Array<{
+    id: string;
+    type: string;
+    category: string;
+    label: string;
+    position: { x: number; y: number };
+    config: Record<string, unknown>;
+  }>;
+  edges: Array<{ id: string; source: string; target: string }>;
+}
+
+export interface ExecutionNodeResult {
+  node_id: string;
+  status: string;
+  data?: unknown;
+  error?: string | null;
+  warnings?: string[];
+  execution_time_ms?: number | null;
+}
+
+export interface WorkflowExecuteResponse {
+  success: boolean;
+  message: string;
+  result?: Record<string, unknown> | null;
+  node_results?: ExecutionNodeResult[] | null;
+  errors: string[];
+  warnings: string[];
+  total_execution_time_ms?: number | null;
+  output_file_base64?: string | null;
+  output_filename?: string | null;
+}
+
 // Erros customizados
 export class ApiError extends Error {
   constructor(
@@ -180,5 +216,43 @@ export async function clearAllDatasets(): Promise<void> {
     method: 'DELETE',
   });
   await handleResponse(response);
+}
+
+/**
+ * Executa o workflow no backend (processa DataFrames, gera Excel se houver saída).
+ */
+export async function executeWorkflow(
+  workflow: WorkflowExecuteBody,
+  options?: { dryRun?: boolean }
+): Promise<WorkflowExecuteResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/workflows/execute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      workflow,
+      dry_run: options?.dryRun ?? false,
+    }),
+  });
+  return handleResponse<WorkflowExecuteResponse>(response);
+}
+
+/** Dispara download de um arquivo a partir de base64 (resposta da execução). */
+export function downloadBase64File(base64: string, filename: string): void {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const blob = new Blob([bytes], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 

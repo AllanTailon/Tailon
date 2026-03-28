@@ -130,6 +130,13 @@ tailon/
 | **Otimização** | Alocar | Algoritmos OR-Tools |
 | **Saída** | Excel Export, Visualizar | Exportação de resultados |
 
+### Execução de workflow
+
+1. Faça upload dos Excel em **Dados** ou configure cada bloco **Importar Excel** com um dataset.
+2. Monte o fluxo (ex.: Importar Excel → Filtrar → Exportar Excel).
+3. Clique em **Executar**. O backend processa com pandas; se houver bloco **Exportar Excel**, o arquivo é baixado automaticamente.
+4. Datasets ficam na memória do backend (mesma instância que recebe o upload).
+
 ### API Endpoints
 
 - `POST /api/v1/workflows` - Criar workflow
@@ -137,7 +144,8 @@ tailon/
 - `GET /api/v1/workflows/{id}` - Obter workflow
 - `PUT /api/v1/workflows/{id}` - Atualizar workflow
 - `DELETE /api/v1/workflows/{id}` - Remover workflow
-- `POST /api/v1/workflows/execute` - Executar workflow
+- `POST /api/v1/workflows/execute` - Executar workflow (`dry_run: false` para execução real; resposta pode incluir `output_file_base64` + `output_filename`)
+- `POST /api/v1/data/upload` - Upload de Excel/CSV
 
 ## Segurança
 
@@ -151,14 +159,24 @@ O projeto implementa várias medidas de segurança:
 - **Containers isolados**: Docker isola a aplicação do sistema host
 - **Usuário não-root**: Containers rodam com usuário sem privilégios
 
-## Próximos Passos
+## Roadmap
 
-- [ ] Upload real de arquivos Excel
-- [ ] Processamento de dados com pandas
-- [ ] Algoritmos de otimização com OR-Tools
-- [ ] Agente de IA para gerar regras automaticamente
-- [ ] Autenticação de usuários
-- [ ] Persistência em banco de dados
+### Curto prazo
+
+- Testes automatizados (pytest) para o executor e rota `/execute`
+- Melhorias no bloco **Agendar** (scheduling com OR-Tools)
+- UI para exibir preview do resultado sem depender só do `alert`
+
+### Médio prazo
+
+- Persistência (SQLite/Postgres) para workflows e metadados de datasets
+- Autenticação e isolamento por usuário/tenant
+
+### Futuro: IA para condições
+
+- Endpoint (ex.: `POST /api/v1/ai/suggest-constraints`) que recebe texto em linguagem natural e schema das colunas
+- Resposta JSON validada (whitelist de operadores) preenchendo restrições/preferências no editor
+- Chaves de API apenas em variáveis de ambiente; rate limit e logs sem dados sensíveis
 
 ## Licença
 
